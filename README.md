@@ -34,6 +34,7 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 | 2 | First light — vendor library, colour bars + text | ✅ done | [lesson 02](docs/lesson-02-first-light.md) |
 | 3 | Touch input (GT911) — orientation, rate, finger painting, INT line | ✅ done | [lesson 03](docs/lesson-03-touch.md) |
 | 4 | LVGL UI — arc gauge, button events, redraw cost | ✅ done | [lesson 04](docs/lesson-04-lvgl.md) |
+| 5 | Monster eye — Adafruit Uncanny Eyes dragon, touch = pain blink | 🚧 5a done | [lesson 05](docs/lesson-05-monster-eye.md) |
 | … | microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).
@@ -68,7 +69,8 @@ include/board_pins.h  pin map as constexpr constants
 src/main.cpp          the current stage's firmware
 stages/NN-*/          frozen snapshot of each completed stage
 docs/                 lesson write-ups and PLAN.md
-scripts/              flash backup + serial helpers
+scripts/              flash backup, serial helpers, eye table generator
+art/                  eye artwork (Adafruit Uncanny Eyes, MIT)
 backup/               verified factory firmware image + restore instructions
 ```
 
@@ -84,3 +86,9 @@ esptool --chip esp32s3 --port /dev/ttyACM0 write-flash 0 backup/factory.bin
 A plain `esptool read-flash 0 ALL` fails on this board (`Packet content transfer stopped` at
 fixed addresses); [`scripts/backup_flash.py`](scripts/backup_flash.py) works around it by reading
 in chunks and falling back to the ROM reader for the blocks that stall.
+
+## Credits
+
+The monster eye (stage 5) ports the renderer, table format and dragon artwork of
+[Adafruit Uncanny Eyes](https://github.com/adafruit/Uncanny_Eyes) by Phil Burgess / Paint Your
+Dragon for Adafruit Industries, MIT license.

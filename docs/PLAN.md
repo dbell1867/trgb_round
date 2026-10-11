@@ -8,7 +8,7 @@
   vendor board JSON in `boards/`), `include/board_pins.h`, `scripts/read_serial.py`.
 - **Stage 1 DONE** (hello serial; lesson-01, snapshot `stages/01-hello-serial/`).
   Factory demo is gone from flash (restore from `backup/`).
-- **`src/main.cpp`:** Stage 4a LVGL demo (arc gauge + event-counting button + refresh monitor).
+- **`src/main.cpp`:** Stage 5a monster eye — dragon Uncanny Eyes renderer at 240 px, pixel-doubled, pupil breathing.
 - **Stage 2a DONE — first light** (vendor lib + pushColors colour bars; colours + orientation correct;
   GT911 confirmed at 0x5D). lesson-02, snapshot `stages/02a-first-light/`.
 - **Stage 2b DONE — text** (Arduino_GFX canvas in PSRAM → pushColors; strip updates 1.6 ms vs 24 ms full;
@@ -20,7 +20,12 @@
   data `docs/data/stage3b-int-modes.csv`.
 - **Stage 4a DONE — LVGL 8** via vendor glue: +325 KB flash, no button bounce (taps + 4 s hold clean),
   arc drag 7–9 ms/redraw, ≤31/s (capped by 30 ms touch read). lesson-04, `stages/04a-lvgl-arc-button/`.
-- **Next:** pick a real round-UI project (clock face / dashboard / control knob), or SD / Wi-Fi / sleep.
+- **Stage 5a DONE — monster eye first light** (lesson-05): tables from `scripts/gen_eye.py`
+  (`include/eye_dragon.h`), 16.4 fps (render 37 ms, push 24 ms). Found + fixed **USB serial hang**:
+  core 2.0.17 `HWCDC::write` with `setTxTimeoutMs(0)` blocks forever when the port is closed but the cable
+  is plugged in → use `logf()` (drops lines that don't fit). User confirmed it animates with no monitor open.
+  Snapshot `stages/05a-eye-first-light/`.
+- **Next:** snapshot 5a → 5b saccades → 5c blinks + lid tracking → 5d touch = pain blink.
 
 ## Board facts (measured)
 - ESP32-S3 (QFN56) rev v0.1, 8 MB embedded octal PSRAM, 16 MB Winbond flash (quad), MAC 34:85:18:a9:7a:58.
@@ -36,6 +41,7 @@
 
 - Touch: no coordinate transform; always pass 5-element arrays to getPoint (SensorLib internals).
 - Touch reads gated on INT LOW (LEVEL mode); edge-triggered IRQ doesn't work on this board.
+- Serial logging via `logf()` (non-blocking, drops when full) — `setTxTimeoutMs(0)` alone hangs on core 2.0.17.
 - Keep CORE_DEBUG_LEVEL=0: level 3 + setDebugOutput broke GT911 detection (timing-fragile init).
 
 - UI: LVGL 8.4 with the vendor's LV_Helper + lv_conf.h unmodified (no second lv_conf.h).
