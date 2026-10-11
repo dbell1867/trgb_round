@@ -32,8 +32,9 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 | 0 | Detect, research, factory backup | ✅ done | [lesson 01](docs/lesson-01-bringup-and-hello-serial.md) |
 | 1 | Hello, serial — prove build → flash → serial | ✅ done | [lesson 01](docs/lesson-01-bringup-and-hello-serial.md) |
 | 2 | First light — vendor library, colour bars + text | ✅ done | [lesson 02](docs/lesson-02-first-light.md) |
-| 3 | Touch input (GT911) — orientation, rate, finger painting | ✅ done | [lesson 03](docs/lesson-03-touch.md) |
-| … | LVGL UI, microSD, Wi-Fi, battery + deep sleep | ideas | — |
+| 3 | Touch input (GT911) — orientation, rate, finger painting, INT line | ✅ done | [lesson 03](docs/lesson-03-touch.md) |
+| 4 | LVGL UI | 🚧 next | — |
+| … | microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).
 

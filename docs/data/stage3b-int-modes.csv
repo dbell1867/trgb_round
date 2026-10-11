@@ -1,0 +1,13 @@
+time,mode,phase,int_low_pct,int_changes,reads_per_s,frames_per_s,empties_per_s,note
+20:03:13,POLL,hold+lift,84,5,838,65,773,
+20:03:14,LEVEL,hold,100,0,796,81,715,
+20:03:15,LEVEL,lift,72,16,619,59,560,
+20:03:16-37,LEVEL,idle,0,0,0,0,0,silent seconds (no line printed)
+20:03:39-41,NOREAD,hold,100,0,0,0,0,
+20:05:33,POLL,tap,10,24,980,8,972,one brief tap
+20:07:16,NOREAD,tap,31,1,0,0,0,tap at start of second
+20:07:17-30,NOREAD,after lift,100,0,0,0,0,INT latched LOW 14 s
+20:07:31,POLL,first read,67,7,388,1,387,stale frame read; INT released
+20:07:44,LEVEL,tap,3,1,33,5,28,
+20:07:45,LEVEL,tap,4,26,44,1,43,
+20:07:57-08:25,NOREAD,after lift,100,0,0,0,0,INT latched LOW 29+ s
