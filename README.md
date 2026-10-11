@@ -12,7 +12,7 @@ Every stage has predictions, measured results and a write-up in [`docs/`](docs/)
 | **MCU** | ESP32-S3R8 — dual-core Xtensa LX7 @ 240 MHz, Wi-Fi, BLE 5 |
 | **Memory** | 16 MB flash (Winbond W25Q128), 8 MB octal PSRAM |
 | **Display** | 480×480 round IPS, ST7701S driver, RGB parallel interface |
-| **Touch** | GT911 capacitive (expected for the 2.8" — to be confirmed) |
+| **Touch** | GT911 capacitive, I²C 0x5D (confirmed) |
 | **I/O expander** | XL9555 on I²C — owns LCD reset/init lines, touch reset, power enable, SD enable |
 | **Other** | microSD (1-bit SD_MMC), LiPo connector (voltage on GPIO 4), Grove I²C port, BOOT + RST buttons |
 
@@ -31,8 +31,8 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 |---|---|---|---|
 | 0 | Detect, research, factory backup | ✅ done | [lesson 01](docs/lesson-01-bringup-and-hello-serial.md) |
 | 1 | Hello, serial — prove build → flash → serial | ✅ done | [lesson 01](docs/lesson-01-bringup-and-hello-serial.md) |
-| 2 | First light — vendor library, colour bars + text | 🚧 in progress | — |
-| 3 | Touch input (GT911) | planned | — |
+| 2 | First light — vendor library, colour bars + text | ✅ done | [lesson 02](docs/lesson-02-first-light.md) |
+| 3 | Touch input (GT911) | 🚧 next | — |
 | … | LVGL UI, microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).
