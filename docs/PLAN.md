@@ -25,7 +25,7 @@
   core 2.0.17 `HWCDC::write` with `setTxTimeoutMs(0)` blocks forever when the port is closed but the cable
   is plugged in → use `logf()` (drops lines that don't fit). User confirmed it animates with no monitor open.
   Snapshot `stages/05a-eye-first-light/`.
-- **Next:** snapshot 5a → 5b saccades → 5c blinks + lid tracking → 5d touch = pain blink.
+- **Next (resume here):** 5b saccades (random flick 72–144 ms + ease, hold 0–3 s, sclera offset 0..60, centre 30; prediction: ~1–2 frames per flick at 16 fps) → 5c blinks + lid tracking → 5d touch = pain blink.
 
 ## Board facts (measured)
 - ESP32-S3 (QFN56) rev v0.1, 8 MB embedded octal PSRAM, 16 MB Winbond flash (quad), MAC 34:85:18:a9:7a:58.
