@@ -35,6 +35,7 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 | 3 | Touch input (GT911) — orientation, rate, finger painting, INT line | ✅ done | [lesson 03](docs/lesson-03-touch.md) |
 | 4 | LVGL UI — arc gauge, button events, redraw cost | ✅ done | [lesson 04](docs/lesson-04-lvgl.md) |
 | 5 | Monster eye — Adafruit Uncanny Eyes dragon, touch = pain blink | ✅ done | [lesson 05](docs/lesson-05-monster-eye.md) |
+| 6 | Jack-o'-lantern eye — pumpkin-flesh eyelids, tables in RAM | ✅ done | [lesson 06](docs/lesson-06-pumpkin-lids.md) |
 | … | microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).
@@ -69,7 +70,7 @@ include/board_pins.h  pin map as constexpr constants
 src/main.cpp          the current stage's firmware
 stages/NN-*/          frozen snapshot of each completed stage
 docs/                 lesson write-ups and PLAN.md
-scripts/              flash backup, serial helpers, eye table generator
+scripts/              flash backup, serial helpers, eye + lid texture generators
 art/                  eye artwork (Adafruit Uncanny Eyes, MIT)
 backup/               verified factory firmware image + restore instructions
 ```

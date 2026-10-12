@@ -8,7 +8,7 @@
   vendor board JSON in `boards/`), `include/board_pins.h`, `scripts/read_serial.py`.
 - **Stage 1 DONE** (hello serial; lesson-01, snapshot `stages/01-hello-serial/`).
   Factory demo is gone from flash (restore from `backup/`).
-- **`src/main.cpp`:** Stage 5d monster eye — saccades, random-walk pupil, lids track + blink, touch = pain (flinch/squint/tremble/red).
+- **`src/main.cpp`:** Stage 6 jack-o'-lantern eye — stage 5d + pumpkin-flesh lids (texture by depth into lid) + lid shadow; per-pixel tables in internal RAM, ~19.6 fps.
 - **Stage 2a DONE — first light** (vendor lib + pushColors colour bars; colours + orientation correct;
   GT911 confirmed at 0x5D). lesson-02, snapshot `stages/02a-first-light/`.
 - **Stage 2b DONE — text** (Arduino_GFX canvas in PSRAM → pushColors; strip updates 1.6 ms vs 24 ms full;
@@ -32,6 +32,8 @@
   `stages/05c-eye-lids/`.
 - **Stage 5d DONE — touch = pain** (LEVEL-mode touch; flinch → squint + flutter, pinpoint pupil, tremble, red tint 3 s,
   recover 2 s; re-touch restarts). User: "all phases work". `stages/05d-eye-pain/`.
+- **Stage 6 DONE — pumpkin lids** (lesson-06, `scripts/gen_lids.py` + PC preview, `stages/06-pumpkin-lids/`). Tables in
+  internal RAM: 41.2 → 29.4 ms render (lid maps were the big win).
 - **Next (resume here) — ideas, user to pick:** two-core render/push pipeline (~27+ fps, smoother motion; skip rows
   fully under lids); eye looks toward / away from the finger; battery + deep sleep with touch wake (read until INT HIGH);
   other eye designs via gen_eye.py; SD / Wi-Fi.
