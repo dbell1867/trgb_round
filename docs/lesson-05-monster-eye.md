@@ -155,3 +155,32 @@ and reopens in ~150–300 ms, so **close 100–150 ms, reopen at half speed** is
 
 Pattern from 5b2 and 5c: timings tuned for a 60 fps screen must be re-tuned for the frame rate you
 actually have — anything shorter than ~2 frames reads as a jump.
+
+## Stage 5d — touch = pain
+Everything derives from **time since the last touch**, through one `level` (1 while hurting, ramping
+to 0 over the recovery) — so a new touch just resets the clock:
+
+| Time after touch | Effect |
+|---|---|
+| 0–0.4 s | flinch: lids slam shut in 60 ms (deliberately a snap) and hold |
+| 0.4–3 s | squint (lids 60 % shut) + flutter (150 ms dips every 0.25–0.45 s); pupil → pinpoint (iScale 30, below the normal minimum 80); tremble ±6 rendered px per frame; iris tinted 20/32 towards red |
+| 3–5 s | recovery: level 1 → 0, all of the above eases back |
+
+- **Touch:** stage 3b's LEVEL mode (read the GT911 only while INT is LOW, plus one read after it
+  rises). INT latches until read, so a tap between two frames (~55 ms apart) is never missed; idle
+  costs zero I²C traffic.
+- **Lids refactor:** blinks and pain each give a *closure* 0..1; `closure = max(blink, pain)`, then
+  `u = tracked + (254 − tracked) × closure` (and the same towards 254 for the lower lid).
+- **Red tint:** `blend565()` spreads RGB565's fields apart in a 32-bit word
+  (`(c | c << 16) & 0x07E0F81F`) so one multiply blends R, G and B at once. It relies on unsigned
+  wrap-around when `f − b` is negative, so it was **checked on the PC first**: 100,000 random blends
+  against a per-channel reference, worst error 1 step (rounding).
+
+Result: "all phases work, red tint is good". 3 pain episodes counted, 17.4–18 fps.
+
+### C++ for Python people
+- `static bool wasLow = false;` inside a function keeps its value between calls — like a function
+  attribute or a closure variable in Python.
+- `min(1.0f, x)` — the `f` makes `1.0` a `float`; `min` needs both arguments the same type, and a
+  bare `1.0` is a `double`.
+- The tint is applied only in the iris branch: blending the black pupil with red would make it red too.

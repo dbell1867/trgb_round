@@ -1,7 +1,8 @@
-// Stage 5c — monster eye with eyelids: tracking + autonomous blinks. Port of the renderer and motion
+// Stage 5d — monster eye that feels pain. Port of the renderer and motion
 // logic from Adafruit's Uncanny Eyes (MIT license, Phil Burgess / Paint Your
 // Dragon): dragon eye at 240x240, pixel-doubled into a 480x480 PSRAM frame.
-// Random saccades (flick + hold), random-walk pupil, lids that track and blink.
+// Random saccades, random-walk pupil, lids that track and blink — and a touch
+// makes it flinch shut, squint and tremble with a red, pinpoint-pupilled iris.
 #include <Arduino.h>
 #include <LilyGo_RGBPanel.h>
 #include "board_pins.h"
@@ -14,6 +15,7 @@ static_assert(S * 2 == W, "render size must be half the panel size");
 // Pupil size range for the dragon eye (from Adafruit's dragonEye.h).
 constexpr int IRIS_MIN = 80, IRIS_MAX = 400;
 constexpr uint16_t LID_COLOUR = 0x0000;    // eyelids: black, like the original
+constexpr uint16_t PAIN_RED = 0xF800;      // iris tint while in pain
 
 LilyGo_RGBPanel panel;
 uint16_t *fb = nullptr;                    // 480x480 frame in PSRAM
@@ -22,7 +24,18 @@ uint16_t *fb = nullptr;                    // 480x480 frame in PSRAM
 //   iScale  pupil size 0..1023 (bigger = wider pupil)
 //   sx, sy  top-left offset into the sclera image, 0..SCLERA_SIZE-S (30 = centred)
 //   uT, lT  upper/lower eyelid thresholds, 0 = open .. 254 = closed
-void drawEye(int iScale, int sx, int sy, uint8_t uT, uint8_t lT) {
+//   tint    0..32, how far the iris is blended towards PAIN_RED
+
+// Blend two RGB565 colours, alpha 0..32. Spreading the 5-6-5 fields apart in a
+// 32-bit word (G..R..B with gaps) lets one multiply blend all three channels.
+static inline uint16_t blend565(uint16_t fg, uint16_t bg, uint32_t alpha) {
+    uint32_t f = (fg | (uint32_t)fg << 16) & 0x07E0F81F;
+    uint32_t b = (bg | (uint32_t)bg << 16) & 0x07E0F81F;
+    uint32_t r = (b + (((f - b) * alpha) >> 5)) & 0x07E0F81F;
+    return r | r >> 16;
+}
+
+void drawEye(int iScale, int sx, int sy, uint8_t uT, uint8_t lT, uint8_t tint) {
     const int irisThreshold = (128 * (1023 - iScale) + 512) / 1024;
     const uint32_t irisScale = IRIS_MAP_HEIGHT * 65536 / irisThreshold;
     const int irisOffset = (SCLERA_SIZE - IRIS_SIZE) / 2;   // iris centred in sclera
@@ -47,6 +60,7 @@ void drawEye(int iScale, int sx, int sy, uint8_t uT, uint8_t lT) {
                     d = d * irisScale / 65536;                    // -> iris texture row
                     const int a = (IRIS_MAP_WIDTH * (pol >> 7)) / 512;   // -> texture column
                     p = iris[d][a];
+                    if (tint) p = blend565(PAIN_RED, p, tint);
                 } else {
                     p = sclera[scY][scX];                         // pupil: sclera shows through
                 }
@@ -198,8 +212,9 @@ struct Lids {
         state = CLOSING; start = now; duration = closeUs; blinks++;
     }
 
-    // sx, sy = sclera offset used for this frame. Returns thresholds via uT/lT.
-    void update(uint32_t now, int sx, int sy, uint8_t &uT, uint8_t &lT) {
+    // sx, sy = sclera offset used for this frame; extraClosure = 0..1 from pain.
+    // Returns thresholds via uT/lT.
+    void update(uint32_t now, int sx, int sy, float extraClosure, uint8_t &uT, uint8_t &lT) {
         // Autonomous blinks.
         if (now - lastBlink >= nextBlink) {
             uint32_t d = random(100000, 150000);
@@ -220,29 +235,89 @@ struct Lids {
         if (sampleY >= 0)
             n = (upper[sampleY][sampleX] + upper[sampleY][S - 1 - sampleX]) / 2;
         uFiltered = (uFiltered * 3 + n) / 4;                        // soften motion
-        uT = uFiltered;
-        lT = 254 - uFiltered;
 
-        // Blink: blend from the tracked thresholds towards 254 (shut) and back.
+        // Closure 0 (as tracked) .. 1 (shut): the larger of blink and pain.
+        float closure = 0;
         if (state != OPEN) {
-            uint32_t k = now - start;
-            k = (k >= duration) ? 255 : 255 * k / duration;          // 0..255 through phase
-            k = (state == OPENING) ? 1 + k : 256 - k;                // weight of "open"
-            uT = (uT * k + 254 * (257 - k)) / 256;
-            lT = (lT * k + 254 * (257 - k)) / 256;
+            float f = min(1.0f, (float)(now - start) / duration);    // 0..1 through phase
+            closure = (state == CLOSING) ? f : 1 - f;
         }
+        closure = max(closure, extraClosure);
+        uT = uFiltered + (254 - uFiltered) * closure;
+        lT = (254 - uFiltered) + uFiltered * closure;                // = 254 - u, then towards 254
     }
 };
+
+// ---- Pain ------------------------------------------------------------------
+// A touch sets the clock back to zero. Everything derives from time-since-touch:
+//   0-0.4 s  flinch: lids slam shut (in 60 ms — a flinch should snap)
+//   0.4-3 s  squint (lids ~60 % shut) with flutter blinks, pinpoint pupil,
+//            trembling, red iris
+//   3-5 s    recovery: level 1 -> 0, everything eases back to normal
+struct Pain {
+    static constexpr uint32_t FLINCH_US = 400000, HURT_US = 3000000, RECOVER_US = 2000000;
+    static constexpr float SQUINT = 0.6f;
+    bool active = false;
+    uint32_t since = 0;                       // time of last touch
+    uint32_t flutterStart = 0, nextFlutter = 0;
+    uint32_t touches = 0;
+
+    void hurt(uint32_t now) {
+        if (!active) touches++;
+        active = true; since = now; nextFlutter = FLINCH_US;
+    }
+    // 1 while hurting, falling to 0 over the recovery.
+    float level(uint32_t now) {
+        if (!active) return 0;
+        uint32_t t = now - since;
+        if (t < HURT_US) return 1;
+        if (t < HURT_US + RECOVER_US) return 1 - (float)(t - HURT_US) / RECOVER_US;
+        active = false;
+        return 0;
+    }
+    // Extra lid closure 0..1.
+    float closure(uint32_t now) {
+        if (!active) return 0;
+        uint32_t t = now - since;
+        if (t < 60000) return t / 60000.0f;                  // slam shut
+        if (t < FLINCH_US) return 1;                         // hold shut
+        if (t < HURT_US) {                                   // squint + flutter
+            if (t >= nextFlutter) {
+                flutterStart = t;
+                nextFlutter = t + random(250000, 450000);
+            }
+            float f = (t - flutterStart) / 150000.0f;        // 150 ms dip: shut and back
+            float flutter = f < 1 ? 1 - fabsf(2 * f - 1) : 0;
+            return max(SQUINT, flutter);
+        }
+        return SQUINT * level(now);                          // recovering
+    }
+};
+
+// ---- Touch (stage 3b "LEVEL mode") ---------------------------------------------
+// GT911 INT is LOW while a finger is down OR a report is waiting (latched until
+// read), so: read only while INT is LOW, plus one read after it rises. A short
+// tap between two frames is still caught — the report waits for us.
+bool touched() {
+    static bool wasLow = false;
+    bool intLow = digitalRead(pins::TOUCH_IRQ) == LOW;
+    bool doRead = intLow || wasLow;
+    wasLow = intLow;
+    if (!doRead) return false;
+    int16_t xs[5], ys[5];                       // SensorLib GT911: always 5 (stage 3a)
+    return panel.getPoint(xs, ys, 5) > 0;
+}
 
 Saccade saccade;
 PupilWalk pupil;
 Lids lids;
+Pain pain;
 
 void setup() {
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0);   // G11 — not enough on core 2.0.17, hence logf()
     delay(1500);
-    Serial.println("\n=== T-RGB stage 5c: monster eye, eyelids ===");
+    Serial.println("\n=== T-RGB stage 5d: monster eye, touch = pain ===");
     Serial.printf("tables: screen %d, sclera %d, iris %d, iris map %dx%d\n",
                   SCREEN_SIZE, SCLERA_SIZE, IRIS_SIZE, IRIS_MAP_WIDTH, IRIS_MAP_HEIGHT);
 
@@ -250,7 +325,7 @@ void setup() {
     fb = (uint16_t *)ps_malloc(W * H * sizeof(uint16_t));
     if (!fb) { Serial.println("ps_malloc failed"); return; }
 
-    drawEye((IRIS_MIN + IRIS_MAX) / 2, (SCLERA_SIZE - S) / 2, (SCLERA_SIZE - S) / 2, 0, 0);
+    drawEye((IRIS_MIN + IRIS_MAX) / 2, (SCLERA_SIZE - S) / 2, (SCLERA_SIZE - S) / 2, 0, 0, 0);
     panel.pushColors(0, 0, W, H, fb);          // END coords — full frame
     panel.setBrightness(16);                   // after drawing (G21)
 }
@@ -264,19 +339,30 @@ void loop() {
     const bool wasMoving = saccade.moving;
     saccade.update(now, ex, ey);
     if (saccade.moving && !wasMoving) moves++;
-    const int iScale = pupil.update(now);
+    if (touched()) pain.hurt(now);
+    const float hurt = pain.level(now);        // 0 = calm .. 1 = in pain
 
-    // 0..1023 -> sclera offset 0..SCLERA_SIZE-S (like Arduino's map()).
-    const int sx = ex * (SCLERA_SIZE - S) / 1023;
-    const int sy = ey * (SCLERA_SIZE - S) / 1023;
+    // Pupil shrinks to a pinpoint in pain (below IRIS_MIN = narrower than normal).
+    constexpr int PINPOINT = 30;
+    const int walk = pupil.update(now);
+    const int iScale = walk + (PINPOINT - walk) * hurt;
+
+    // 0..1023 -> sclera offset 0..SCLERA_SIZE-S (like Arduino's map()),
+    // plus a tremble of up to +-6 rendered px while hurting.
+    constexpr int MAX_OFS = SCLERA_SIZE - S;
+    const int shake = 6 * hurt;
+    int sx = ex * MAX_OFS / 1023, sy = ey * MAX_OFS / 1023;
+    if (shake) {
+        sx = constrain(sx + (int)random(-shake, shake + 1), 0, MAX_OFS);
+        sy = constrain(sy + (int)random(-shake, shake + 1), 0, MAX_OFS);
+    }
 
     uint8_t uT, lT;
-    lids.update(now, sx, sy, uT, lT);
-    static uint32_t uSum = 0, lSum = 0;
-    uSum += uT; lSum += lT;
+    lids.update(now, sx, sy, pain.closure(now), uT, lT);
+    const uint8_t tint = 20 * hurt;            // up to 20/32 of the way to red
 
     uint32_t t0 = micros();
-    drawEye(iScale, sx, sy, uT, lT);
+    drawEye(iScale, sx, sy, uT, lT, tint);
     uint32_t t1 = micros();
     panel.pushColors(0, 0, W, H, fb);
     uint32_t t2 = micros();
@@ -287,13 +373,12 @@ void loop() {
     if (millis() - lastReport >= 2000) {
         totalFrames += frames;
         logf("t=%3lus  frames %lu  %.1f fps  render+double %lu us  push %lu us  "
-             "iScale %d  offset %d,%d  lids avg u %lu l %lu  blinks %lu\n",
+             "iScale %d  offset %d,%d  u %d l %d  blinks %lu  touches %lu  hurt %.2f\n",
              millis() / 1000, (unsigned long)totalFrames,
              frames * 1000.0f / (millis() - lastReport),
              (unsigned long)(renderUs / frames), (unsigned long)(pushUs / frames),
-             iScale, sx, sy, (unsigned long)(uSum / frames), (unsigned long)(lSum / frames),
-             (unsigned long)lids.blinks);
-        uSum = lSum = 0;
+             iScale, sx, sy, uT, lT, (unsigned long)lids.blinks,
+             (unsigned long)pain.touches, hurt);
         frames = renderUs = pushUs = 0;
         lastReport = millis();
     }
