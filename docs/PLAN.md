@@ -8,7 +8,7 @@
   vendor board JSON in `boards/`), `include/board_pins.h`, `scripts/read_serial.py`.
 - **Stage 1 DONE** (hello serial; lesson-01, snapshot `stages/01-hello-serial/`).
   Factory demo is gone from flash (restore from `backup/`).
-- **`src/main.cpp`:** Stage 5b monster eye — dragon renderer at 240 px, pixel-doubled, saccades + random-walk pupil, no lids yet.
+- **`src/main.cpp`:** Stage 5c monster eye — dragon renderer, saccades (tuned for 16–18 fps), random-walk pupil, lids track + blink.
 - **Stage 2a DONE — first light** (vendor lib + pushColors colour bars; colours + orientation correct;
   GT911 confirmed at 0x5D). lesson-02, snapshot `stages/02a-first-light/`.
 - **Stage 2b DONE — text** (Arduino_GFX canvas in PSRAM → pushColors; strip updates 1.6 ms vs 24 ms full;
@@ -27,9 +27,11 @@
   Snapshot `stages/05a-eye-first-light/`.
 - **Stage 5b DONE — saccades + pupil random walk** (non-blocking keyframe version of `split()`); 16 fps, 0.54 saccades/s,
   no gap at the rim. `stages/05b-eye-saccades/`.
-- **Next (resume here):** 5c autonomous blinks + upper-lid tracking (port frame(): blink 36–72 ms, deblink half speed,
-  next blink duration*3 + random 4 s; upper threshold sampled from `upper` map above pupil, filtered (u*3+n)/4,
-  lower = 254 - u) → 5d touch = pain blink.
+- **Stage 5b2 DONE** — saccades tuned for 16 fps (glances, distance-scaled flicks, drift). `stages/05b2-eye-natural-motion/`.
+- **Stage 5c DONE** — lids track + blink (close 100–150 ms, reopen half speed); 18 fps (lids skip lookups).
+  `stages/05c-eye-lids/`.
+- **Next (resume here):** 5d touch = pain (LEVEL-mode touch reads; flinch shut → squint + flutter, pinpoint pupil,
+  tremble, red iris tint ~3 s; recover ~2 s; re-touch restarts).
 
 ## Board facts (measured)
 - ESP32-S3 (QFN56) rev v0.1, 8 MB embedded octal PSRAM, 16 MB Winbond flash (quad), MAC 34:85:18:a9:7a:58.

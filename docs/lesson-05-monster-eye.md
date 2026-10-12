@@ -130,3 +130,28 @@ Changes (motion only — frame rate untouched):
 
 Verdict by eye: "better now". The real fix is more frames — a two-core render/push pipeline is a
 later stage.
+
+## Stage 5c — eyelids: tracking + blinks
+- **Tracking** (from `frame()`): sample the `upper` threshold map a quarter iris above the pupil
+  (`sampleY = SCLERA/2 − (sy + IRIS/4)`, X influence halved, averaged with the mirror point). A map
+  value is "the threshold at which this spot is covered", so using it as the threshold puts the lid
+  edge just above the pupil. Smoothed `u = (3u + n)/4`; lower lid `l = 254 − u`.
+- **Blinks:** OPEN → CLOSING → OPENING state machine; thresholds blended towards 254 (shut).
+
+Predictions computed from the tables *before* running (a calculation, not a guess):
+
+| | Predicted | Measured |
+|---|---|---|
+| upper threshold, looking up / centre / down | 15 / 59 / 104 | ~40 at offset 40, 85–101 at offset 5–11 ✓ |
+| lid coverage | 33–49 % of the circle | — (looks right by eye) |
+| render | 27–31 ms (covered pixels skip lookups) | 29.5–31.5 ms ✓ |
+| frame rate | 18–19 fps | 18.0–18.7 fps ✓ |
+| blinks | ~0.45 /s | 0.48 /s ✓ |
+
+Lids track and edges are clean, but **blinks looked like "flashes of black"** — the 36–72 ms close
+is 0–1 frames at 18 fps (same cause as the jerky saccades). A real human blink closes in ~100–150 ms
+and reopens in ~150–300 ms, so **close 100–150 ms, reopen at half speed** is both more realistic and
+2–3 + 4–5 frames here. Verdict: "blinks look natural now".
+
+Pattern from 5b2 and 5c: timings tuned for a 60 fps screen must be re-tuned for the frame rate you
+actually have — anything shorter than ~2 frames reads as a jump.

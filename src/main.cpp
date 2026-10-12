@@ -1,7 +1,7 @@
-// Stage 5b2 — monster eye that looks around (motion tuned for 16 fps). Port of the renderer and motion
+// Stage 5c — monster eye with eyelids: tracking + autonomous blinks. Port of the renderer and motion
 // logic from Adafruit's Uncanny Eyes (MIT license, Phil Burgess / Paint Your
 // Dragon): dragon eye at 240x240, pixel-doubled into a 480x480 PSRAM frame.
-// Random saccades (flick + hold) and a random-walk pupil; no eyelids yet.
+// Random saccades (flick + hold), random-walk pupil, lids that track and blink.
 #include <Arduino.h>
 #include <LilyGo_RGBPanel.h>
 #include "board_pins.h"
@@ -180,14 +180,69 @@ struct PupilWalk {
     }
 };
 
+// ---- Eyelids: tracking + blinks ---------------------------------------------
+// Upper lid follows the pupil by sampling the upper-lid threshold map just above
+// it; the lower lid is "pulled up by tension" from the upper. Blinks blend both
+// thresholds towards 254 (shut): close in 100-150 ms, reopen at half speed.
+// (The original closes in 36-72 ms — 0-1 frames at our 18 fps, which reads as a
+// black flash. 100-150 ms is also closer to a real human blink.)
+struct Lids {
+    enum State { OPEN, CLOSING, OPENING };
+    State state = OPEN;
+    uint32_t start = 0, duration = 0;          // current blink phase
+    uint32_t lastBlink = 0, nextBlink = 1000000;
+    uint8_t uFiltered = 128;
+    uint32_t blinks = 0;
+
+    void startBlink(uint32_t now, uint32_t closeUs) {
+        state = CLOSING; start = now; duration = closeUs; blinks++;
+    }
+
+    // sx, sy = sclera offset used for this frame. Returns thresholds via uT/lT.
+    void update(uint32_t now, int sx, int sy, uint8_t &uT, uint8_t &lT) {
+        // Autonomous blinks.
+        if (now - lastBlink >= nextBlink) {
+            uint32_t d = random(100000, 150000);
+            lastBlink = now;
+            nextBlink = d * 3 + random(4000000);
+            if (state == OPEN) startBlink(now, d);
+        }
+        if (state != OPEN && now - start >= duration) {
+            if (state == CLOSING) { state = OPENING; start = now; duration *= 2; }
+            else state = OPEN;
+        }
+
+        // Tracking: sample the upper map a quarter iris above the pupil centre,
+        // averaged with the mirror-image point (the lid art isn't quite symmetric).
+        const int sampleX = SCLERA_SIZE / 2 - sx / 2;               // reduce X influence
+        const int sampleY = SCLERA_SIZE / 2 - (sy + IRIS_SIZE / 4);
+        uint8_t n = 0;
+        if (sampleY >= 0)
+            n = (upper[sampleY][sampleX] + upper[sampleY][S - 1 - sampleX]) / 2;
+        uFiltered = (uFiltered * 3 + n) / 4;                        // soften motion
+        uT = uFiltered;
+        lT = 254 - uFiltered;
+
+        // Blink: blend from the tracked thresholds towards 254 (shut) and back.
+        if (state != OPEN) {
+            uint32_t k = now - start;
+            k = (k >= duration) ? 255 : 255 * k / duration;          // 0..255 through phase
+            k = (state == OPENING) ? 1 + k : 256 - k;                // weight of "open"
+            uT = (uT * k + 254 * (257 - k)) / 256;
+            lT = (lT * k + 254 * (257 - k)) / 256;
+        }
+    }
+};
+
 Saccade saccade;
 PupilWalk pupil;
+Lids lids;
 
 void setup() {
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0);   // G11 — not enough on core 2.0.17, hence logf()
     delay(1500);
-    Serial.println("\n=== T-RGB stage 5b2: monster eye, natural motion ===");
+    Serial.println("\n=== T-RGB stage 5c: monster eye, eyelids ===");
     Serial.printf("tables: screen %d, sclera %d, iris %d, iris map %dx%d\n",
                   SCREEN_SIZE, SCLERA_SIZE, IRIS_SIZE, IRIS_MAP_WIDTH, IRIS_MAP_HEIGHT);
 
@@ -215,8 +270,13 @@ void loop() {
     const int sx = ex * (SCLERA_SIZE - S) / 1023;
     const int sy = ey * (SCLERA_SIZE - S) / 1023;
 
+    uint8_t uT, lT;
+    lids.update(now, sx, sy, uT, lT);
+    static uint32_t uSum = 0, lSum = 0;
+    uSum += uT; lSum += lT;
+
     uint32_t t0 = micros();
-    drawEye(iScale, sx, sy, 0, 0);
+    drawEye(iScale, sx, sy, uT, lT);
     uint32_t t1 = micros();
     panel.pushColors(0, 0, W, H, fb);
     uint32_t t2 = micros();
@@ -227,12 +287,13 @@ void loop() {
     if (millis() - lastReport >= 2000) {
         totalFrames += frames;
         logf("t=%3lus  frames %lu  %.1f fps  render+double %lu us  push %lu us  "
-             "iScale %d  offset %d,%d  glances %lu big %lu  mean flick %lu ms\n",
+             "iScale %d  offset %d,%d  lids avg u %lu l %lu  blinks %lu\n",
              millis() / 1000, (unsigned long)totalFrames,
              frames * 1000.0f / (millis() - lastReport),
              (unsigned long)(renderUs / frames), (unsigned long)(pushUs / frames),
-             iScale, sx, sy, (unsigned long)saccade.small, (unsigned long)saccade.big,
-             (unsigned long)(moves ? saccade.flickUsSum / moves / 1000 : 0));
+             iScale, sx, sy, (unsigned long)(uSum / frames), (unsigned long)(lSum / frames),
+             (unsigned long)lids.blinks);
+        uSum = lSum = 0;
         frames = renderUs = pushUs = 0;
         lastReport = millis();
     }

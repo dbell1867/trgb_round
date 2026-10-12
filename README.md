@@ -34,7 +34,7 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 | 2 | First light — vendor library, colour bars + text | ✅ done | [lesson 02](docs/lesson-02-first-light.md) |
 | 3 | Touch input (GT911) — orientation, rate, finger painting, INT line | ✅ done | [lesson 03](docs/lesson-03-touch.md) |
 | 4 | LVGL UI — arc gauge, button events, redraw cost | ✅ done | [lesson 04](docs/lesson-04-lvgl.md) |
-| 5 | Monster eye — Adafruit Uncanny Eyes dragon, touch = pain blink | 🚧 5a–5b done | [lesson 05](docs/lesson-05-monster-eye.md) |
+| 5 | Monster eye — Adafruit Uncanny Eyes dragon, touch = pain blink | 🚧 5a–5c done | [lesson 05](docs/lesson-05-monster-eye.md) |
 | … | microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).
