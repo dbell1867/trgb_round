@@ -36,6 +36,7 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 | 4 | LVGL UI — arc gauge, button events, redraw cost | ✅ done | [lesson 04](docs/lesson-04-lvgl.md) |
 | 5 | Monster eye — Adafruit Uncanny Eyes dragon, touch = pain blink | ✅ done | [lesson 05](docs/lesson-05-monster-eye.md) |
 | 6 | Jack-o'-lantern eye — pumpkin-flesh eyelids, tables in RAM | ✅ done | [lesson 06](docs/lesson-06-pumpkin-lids.md) |
+| 7 | Two-core render/push pipeline — memory bus is the limit (negative result) | ✅ done | [lesson 07](docs/lesson-07-two-cores.md) |
 | … | microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).

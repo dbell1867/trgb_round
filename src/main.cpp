@@ -19,7 +19,8 @@ constexpr int IRIS_MIN = 80, IRIS_MAX = 400;
 constexpr uint16_t PAIN_RED = 0xF800;      // iris tint while in pain
 
 LilyGo_RGBPanel panel;
-uint16_t *fb = nullptr;                    // 480x480 frame in PSRAM
+uint16_t *fb = nullptr;                    // the frame drawEye() renders into
+uint16_t *fbs[2] = {nullptr, nullptr};     // two 480x480 frames in PSRAM (stage 7)
 // Lid texture, copied from flash into internal RAM at startup (flash reads go
 // through a small cache; the per-pixel tables kept evicting each other).
 // Pointer-to-row type, so lid[depth][x] works exactly like the flash table.
@@ -53,6 +54,7 @@ void drawEye(int iScale, int sx, int sy, uint8_t uT, uint8_t lT, uint8_t tint) {
         const int irY = scY - irisOffset;
         // Two output pixels per rendered pixel: write them as one 32-bit word.
         uint32_t *out = reinterpret_cast<uint32_t *>(fb + (2 * y) * W);
+        uint32_t *out2 = out + W / 2;             // the row below (W/2 words per row)
         for (int x = 0; x < S; x++) {
             const int scX = sx + x;
             const int irX = scX - irisOffset;
@@ -64,7 +66,7 @@ void drawEye(int iScale, int sx, int sy, uint8_t uT, uint8_t lT, uint8_t tint) {
                 // glowing cut edge always rides on the lid's moving edge.
                 const int depth = (du >= 0 && dl >= 0) ? min(du, dl) : max(du, dl);
                 const uint16_t c = lid[depth][x];
-                out[x] = (uint32_t)c << 16 | c;
+                out[x] = out2[x] = (uint32_t)c << 16 | c;
                 continue;
             } else if (irY < 0 || irY >= IRIS_SIZE || irX < 0 || irX >= IRIS_SIZE) {
                 p = sclera[scY][scX];                             // outside the iris box
@@ -84,10 +86,8 @@ void drawEye(int iScale, int sx, int sy, uint8_t uT, uint8_t lT, uint8_t tint) {
             const int gap = min(-du, -dl);                        // > 0: distance to edge
             if (gap <= LID_SHADOW)
                 p = blend565(0x0000, p, LID_SHADOW_MAX * (LID_SHADOW + 1 - gap) / LID_SHADOW);
-            out[x] = (uint32_t)p << 16 | p;                       // pixel doubled horizontally
+            out[x] = out2[x] = (uint32_t)p << 16 | p;             // doubled across and down
         }
-        // ...and vertically: copy the finished row to the one below.
-        memcpy(fb + (2 * y + 1) * W, fb + (2 * y) * W, W * sizeof(uint16_t));
     }
 }
 
@@ -332,17 +332,46 @@ PupilWalk pupil;
 Lids lids;
 Pain pain;
 
+// ---- Two-core pipeline (stage 7) ---------------------------------------------
+// Core 1 (loop) renders frame N+1 while core 0 (pushTask) pushes frame N.
+// Buffers travel through two queues, so neither core touches a buffer the
+// other is using:  freeQ  = buffers ready to draw into (pusher -> renderer)
+//                  readyQ = finished frames to push   (renderer -> pusher)
+QueueHandle_t freeQ, readyQ;
+
+// Pusher statistics: only pushTask writes them, only ever increasing; loop()
+// reads them and takes differences, so the two cores never write the same word.
+volatile uint32_t pushCount = 0, pushBusyUs = 0, pushWaitUs = 0;
+
+void pushTask(void *) {
+    for (;;) {
+        uint16_t *buf;
+        uint32_t t0 = micros();
+        xQueueReceive(readyQ, &buf, portMAX_DELAY);    // wait for a finished frame
+        uint32_t t1 = micros();
+        panel.pushColors(0, 0, W, H, buf);
+        uint32_t t2 = micros();
+        xQueueSend(freeQ, &buf, portMAX_DELAY);        // hand the buffer back
+        pushWaitUs += t1 - t0;
+        pushBusyUs += t2 - t1;
+        pushCount++;
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0);   // G11 — not enough on core 2.0.17, hence logf()
     delay(1500);
-    Serial.println("\n=== T-RGB stage 6b: pumpkin lids, tables in RAM ===");
+    Serial.println("\n=== T-RGB stage 7: two-core render/push pipeline ===");
     Serial.printf("tables: screen %d, sclera %d, iris %d, iris map %dx%d\n",
                   SCREEN_SIZE, SCLERA_SIZE, IRIS_SIZE, IRIS_MAP_WIDTH, IRIS_MAP_HEIGHT);
 
     panel.begin();
-    fb = (uint16_t *)ps_malloc(W * H * sizeof(uint16_t));
-    if (!fb) { Serial.println("ps_malloc failed"); return; }
+    for (auto &b : fbs) {
+        b = (uint16_t *)ps_malloc(W * H * sizeof(uint16_t));
+        if (!b) { Serial.println("ps_malloc failed"); return; }
+    }
+    fb = fbs[0];
     // Copy the per-pixel tables from flash into internal RAM.
     constexpr uint32_t CAPS = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
     auto *texRam = (uint16_t (*)[SCREEN_SIZE])heap_caps_malloc(sizeof(lidTex), CAPS);
@@ -363,10 +392,17 @@ void setup() {
     drawEye((IRIS_MIN + IRIS_MAX) / 2, (SCLERA_SIZE - S) / 2, (SCLERA_SIZE - S) / 2, 0, 0, 0);
     panel.pushColors(0, 0, W, H, fb);          // END coords — full frame
     panel.setBrightness(16);                   // after drawing (G21)
+
+    // Start the pipeline: both buffers free, pusher on core 0 (loop runs on core 1).
+    freeQ = xQueueCreate(2, sizeof(uint16_t *));
+    readyQ = xQueueCreate(2, sizeof(uint16_t *));
+    for (auto b : fbs) xQueueSend(freeQ, &b, 0);
+    xTaskCreatePinnedToCore(pushTask, "push", 4096, nullptr, 2, nullptr, 0);
 }
 
 void loop() {
-    static uint32_t totalFrames = 0, frames = 0, renderUs = 0, pushUs = 0, lastReport = millis();
+    static uint32_t totalFrames = 0, frames = 0, renderUs = 0, waitUs = 0, lastReport = millis();
+    static uint32_t lastPushCount = 0, lastPushBusy = 0, lastPushWait = 0;
 
     static uint32_t moves = 0;
     const uint32_t now = micros();
@@ -397,24 +433,27 @@ void loop() {
     const uint8_t tint = 20 * hurt;            // up to 20/32 of the way to red
 
     uint32_t t0 = micros();
-    drawEye(iScale, sx, sy, uT, lT, tint);
+    xQueueReceive(freeQ, &fb, portMAX_DELAY);  // a buffer the pusher is done with
     uint32_t t1 = micros();
-    panel.pushColors(0, 0, W, H, fb);
+    drawEye(iScale, sx, sy, uT, lT, tint);
     uint32_t t2 = micros();
+    xQueueSend(readyQ, &fb, portMAX_DELAY);    // off to core 0
 
     frames++;
-    renderUs += t1 - t0;
-    pushUs += t2 - t1;
+    waitUs += t1 - t0;
+    renderUs += t2 - t1;
     if (millis() - lastReport >= 2000) {
         totalFrames += frames;
-        logf("t=%3lus  frames %lu  %.1f fps  render+double %lu us  push %lu us  "
-             "iScale %d  offset %d,%d  u %d l %d  blinks %lu  touches %lu  hurt %.2f\n",
-             millis() / 1000, (unsigned long)totalFrames,
-             frames * 1000.0f / (millis() - lastReport),
-             (unsigned long)(renderUs / frames), (unsigned long)(pushUs / frames),
-             iScale, sx, sy, uT, lT, (unsigned long)lids.blinks,
-             (unsigned long)pain.touches, hurt);
-        frames = renderUs = pushUs = 0;
+        const uint32_t pc = pushCount, pb = pushBusyUs, pw = pushWaitUs;   // snapshot
+        const uint32_t pushes = max(1u, pc - lastPushCount);
+        logf("t=%3lus  %.1f fps  render %lu us (waited %lu)  push %lu us (waited %lu)  "
+             "pushes %lu  u %d l %d  touches %lu  hurt %.2f\n",
+             millis() / 1000, frames * 1000.0f / (millis() - lastReport),
+             (unsigned long)(renderUs / frames), (unsigned long)(waitUs / frames),
+             (unsigned long)((pb - lastPushBusy) / pushes), (unsigned long)((pw - lastPushWait) / pushes),
+             (unsigned long)pushes, uT, lT, (unsigned long)pain.touches, hurt);
+        lastPushCount = pc; lastPushBusy = pb; lastPushWait = pw;
+        frames = renderUs = waitUs = 0;
         lastReport = millis();
     }
 }
