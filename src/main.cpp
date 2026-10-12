@@ -1,7 +1,7 @@
-// Stage 5a — monster eye, first light. Port of the renderer from Adafruit's
-// Uncanny Eyes (MIT license, Phil Burgess / Paint Your Dragon), drawing the
-// dragon eye at 240x240 and pixel-doubling into a 480x480 PSRAM frame.
-// The eye holds still while the pupil "breathes" so we can check the art.
+// Stage 5b — monster eye that looks around. Port of the renderer and motion
+// logic from Adafruit's Uncanny Eyes (MIT license, Phil Burgess / Paint Your
+// Dragon): dragon eye at 240x240, pixel-doubled into a 480x480 PSRAM frame.
+// Random saccades (flick + hold) and a random-walk pupil; no eyelids yet.
 #include <Arduino.h>
 #include <LilyGo_RGBPanel.h>
 #include "board_pins.h"
@@ -70,11 +70,97 @@ void logf(const char *fmt, ...) {
     if (n > 0 && Serial.availableForWrite() >= n) Serial.write(buf, n);
 }
 
+// ---- Eye motion (saccades) -------------------------------------------------
+// Positions are 0..1023 on each axis (512 = centre), like the original; mapped
+// to a sclera offset 0..SCLERA_SIZE-S when drawing.
+struct Saccade {
+    bool moving = false;
+    int oldX = 512, oldY = 512, newX = 512, newY = 512;
+    uint32_t start = 0, duration = 0;           // microseconds
+
+    // Smooth start and stop: smoothstep 3t^2 - 2t^3, t in 0..1 -> 0..1.
+    static float ease(float t) { return t * t * (3 - 2 * t); }
+
+    void update(uint32_t now, int &x, int &y) {
+        uint32_t dt = now - start;
+        if (moving) {
+            if (dt >= duration) {               // arrived: hold for 0-3 s
+                moving = false;
+                oldX = newX; oldY = newY;
+                duration = random(3000000);
+                start = now;
+                x = oldX; y = oldY;
+            } else {                            // in flight: interpolate
+                float e = ease((float)dt / duration);
+                x = oldX + (newX - oldX) * e;
+                y = oldY + (newY - oldY) * e;
+            }
+        } else {
+            x = oldX; y = oldY;
+            if (dt >= duration) {               // hold over: pick a target in the circle
+                int dx, dy;
+                do {
+                    newX = random(1024); newY = random(1024);
+                    dx = newX * 2 - 1023; dy = newY * 2 - 1023;
+                } while (dx * dx + dy * dy > 1023 * 1023);
+                duration = random(72000, 144000);   // ~1/14 .. 1/7 s
+                start = now;
+                moving = true;
+            }
+        }
+    }
+};
+
+// ---- Pupil (random walk) ---------------------------------------------------
+// Adafruit's split(): every 10 s pick a new pupil size, then recursively displace
+// the midpoint by a random amount, halving the range each level, until the range
+// is < 8. The original draws frames inside the recursion (blocking); here the
+// recursion just fills a list of keyframes and loop() interpolates by time.
+struct PupilWalk {
+    static constexpr uint32_t SEGMENT_US = 10000000;   // 10 s per target
+    static constexpr int MAX_KEYS = 66;                // 2^6 segments + ends, plenty
+    int16_t value[MAX_KEYS];
+    uint32_t when[MAX_KEYS];
+    int count = 0;
+    int current = (IRIS_MIN + IRIS_MAX) / 2;
+    uint32_t segStart = 0;
+
+    void split(int startV, int endV, uint32_t startT, uint32_t dur, int range) {
+        if (range >= 8 && count < MAX_KEYS - 1) {
+            range /= 2; dur /= 2;
+            int midV = (startV + endV - range) / 2 + random(range);
+            split(startV, midV, startT, dur, range);
+            split(midV, endV, startT + dur, dur, range);
+        } else {                                       // leaf: record its end point
+            value[count] = endV; when[count] = startT + dur - segStart; count++;
+        }
+    }
+    void newSegment(uint32_t now) {
+        int target = random(IRIS_MIN, IRIS_MAX);
+        segStart = now; count = 0;
+        value[count] = current; when[count] = 0; count++;   // starts where we are
+        split(current, target, now, SEGMENT_US, IRIS_MAX - IRIS_MIN);
+    }
+    int update(uint32_t now) {
+        uint32_t dt = now - segStart;
+        if (count == 0 || dt >= SEGMENT_US) { newSegment(now); dt = 0; }
+        int i = 1;
+        while (i < count - 1 && when[i] <= dt) i++;   // first keyframe after dt
+        uint32_t t0 = when[i - 1], t1 = when[i];
+        int v = value[i - 1] + (int)((value[i] - value[i - 1]) * (int64_t)(dt - t0) / (int64_t)(t1 - t0));
+        current = constrain(v, IRIS_MIN, IRIS_MAX);
+        return current;
+    }
+};
+
+Saccade saccade;
+PupilWalk pupil;
+
 void setup() {
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0);   // G11 — not enough on core 2.0.17, hence logf()
     delay(1500);
-    Serial.println("\n=== T-RGB stage 5a: monster eye, first light ===");
+    Serial.println("\n=== T-RGB stage 5b: monster eye looks around ===");
     Serial.printf("tables: screen %d, sclera %d, iris %d, iris map %dx%d\n",
                   SCREEN_SIZE, SCLERA_SIZE, IRIS_SIZE, IRIS_MAP_WIDTH, IRIS_MAP_HEIGHT);
 
@@ -90,13 +176,20 @@ void setup() {
 void loop() {
     static uint32_t totalFrames = 0, frames = 0, renderUs = 0, pushUs = 0, lastReport = millis();
 
-    // Pupil breathes between IRIS_MIN and IRIS_MAX every ~4 s.
-    float phase = (millis() % 4000) / 4000.0f;                     // 0..1
-    int iScale = IRIS_MIN + (IRIS_MAX - IRIS_MIN) * (0.5f - 0.5f * cosf(phase * 2 * PI));
-    const int c = (SCLERA_SIZE - S) / 2;
+    static uint32_t moves = 0;
+    const uint32_t now = micros();
+    int ex, ey;
+    const bool wasMoving = saccade.moving;
+    saccade.update(now, ex, ey);
+    if (saccade.moving && !wasMoving) moves++;
+    const int iScale = pupil.update(now);
+
+    // 0..1023 -> sclera offset 0..SCLERA_SIZE-S (like Arduino's map()).
+    const int sx = ex * (SCLERA_SIZE - S) / 1023;
+    const int sy = ey * (SCLERA_SIZE - S) / 1023;
 
     uint32_t t0 = micros();
-    drawEye(iScale, c, c, 0, 0);
+    drawEye(iScale, sx, sy, 0, 0);
     uint32_t t1 = micros();
     panel.pushColors(0, 0, W, H, fb);
     uint32_t t2 = micros();
@@ -106,10 +199,12 @@ void loop() {
     pushUs += t2 - t1;
     if (millis() - lastReport >= 2000) {
         totalFrames += frames;
-        logf("t=%3lus  frames %lu  %.1f fps  render+double %lu us  push %lu us  (iScale %d)\n",
+        logf("t=%3lus  frames %lu  %.1f fps  render+double %lu us  push %lu us  "
+             "iScale %d  offset %d,%d  saccades %lu\n",
              millis() / 1000, (unsigned long)totalFrames,
              frames * 1000.0f / (millis() - lastReport),
-             (unsigned long)(renderUs / frames), (unsigned long)(pushUs / frames), iScale);
+             (unsigned long)(renderUs / frames), (unsigned long)(pushUs / frames),
+             iScale, sx, sy, (unsigned long)moves);
         frames = renderUs = pushUs = 0;
         lastReport = millis();
     }

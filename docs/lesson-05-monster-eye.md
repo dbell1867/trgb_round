@@ -80,3 +80,34 @@ Verified: port closed for 30 s → frame counter went 165 → 701 over 32 s (16.
   `fmt % args` into a fixed-size buffer and returns the length it wanted.
 - `#define private public` before an `#include` exposes a class's private members — a probe-only hack
   (used for the panel kick, then removed).
+
+## Stage 5b — the eye looks around
+Ported from `frame()` in Uncanny Eyes:
+- **Saccades:** hold 0–3 s → pick a random target inside a circle (positions 0..1023, rejection
+  sampling) → flick there in 72–144 ms along an ease curve (smoothstep `3t² − 2t³`; the original uses a
+  table of the same shape). Looking around = panning the 240 px window over the 300 px sclera:
+  offset 0..60, centre 30 → ±60 px on screen. The iris (300 px) only just covers the screen at the
+  extremes — confirmed by eye: no black gap at the rim.
+- **Pupil random walk:** Adafruit's recursive `split()` (midpoint displacement, range halved per level
+  until < 8 → 64 segments per 10 s target). The original renders frames *inside* the recursion, which
+  blocks `loop()`; here the recursion fills a keyframe list and `loop()` interpolates by time —
+  same motion, non-blocking (needed for touch in 5d).
+
+| | Predicted | Measured |
+|---|---|---|
+| frame rate | ~16.4 fps | 15.8–16.9 fps ✓ |
+| saccades | ~0.6 /s (mean hold 1.5 s + flick 0.1 s) | 15 in ~28 s = 0.54 /s ✓ |
+| offsets | spread in 0..60 | 9..58 ✓ |
+| flick look | 1–2 frames → jumps rather than glides | as predicted; looks acceptable |
+
+**Observation:** render time follows pupil size — ~38.9 ms with a wide pupil vs ~35.2 ms narrow. Pupil
+pixels read the 180 KB `sclera` table, iris pixels the 80 KB `iris` table; the bigger flash table
+misses the cache more. A lead for optimising later.
+
+### C++ for Python people
+- `struct Saccade { ... };` with member functions ≈ a small Python class; members get default values
+  in the declaration (`bool moving = false;`) like dataclass defaults.
+- Recursion works exactly as in Python; `split()` appends to a fixed-size array (`value[count++]`)
+  instead of a list, so it carries a `count < MAX_KEYS - 1` guard — C arrays don't grow or bounds-check.
+- `int v = a + (b - a) * (int64_t)dt / span;` — the cast to 64-bit avoids overflow, since
+  `320 × 10,000,000 µs` doesn't fit in 32 bits (Python ints never overflow).

@@ -8,7 +8,7 @@
   vendor board JSON in `boards/`), `include/board_pins.h`, `scripts/read_serial.py`.
 - **Stage 1 DONE** (hello serial; lesson-01, snapshot `stages/01-hello-serial/`).
   Factory demo is gone from flash (restore from `backup/`).
-- **`src/main.cpp`:** Stage 5a monster eye — dragon Uncanny Eyes renderer at 240 px, pixel-doubled, pupil breathing.
+- **`src/main.cpp`:** Stage 5b monster eye — dragon renderer at 240 px, pixel-doubled, saccades + random-walk pupil, no lids yet.
 - **Stage 2a DONE — first light** (vendor lib + pushColors colour bars; colours + orientation correct;
   GT911 confirmed at 0x5D). lesson-02, snapshot `stages/02a-first-light/`.
 - **Stage 2b DONE — text** (Arduino_GFX canvas in PSRAM → pushColors; strip updates 1.6 ms vs 24 ms full;
@@ -25,7 +25,11 @@
   core 2.0.17 `HWCDC::write` with `setTxTimeoutMs(0)` blocks forever when the port is closed but the cable
   is plugged in → use `logf()` (drops lines that don't fit). User confirmed it animates with no monitor open.
   Snapshot `stages/05a-eye-first-light/`.
-- **Next (resume here):** 5b saccades (random flick 72–144 ms + ease, hold 0–3 s, sclera offset 0..60, centre 30; prediction: ~1–2 frames per flick at 16 fps) → 5c blinks + lid tracking → 5d touch = pain blink.
+- **Stage 5b DONE — saccades + pupil random walk** (non-blocking keyframe version of `split()`); 16 fps, 0.54 saccades/s,
+  no gap at the rim. `stages/05b-eye-saccades/`.
+- **Next (resume here):** 5c autonomous blinks + upper-lid tracking (port frame(): blink 36–72 ms, deblink half speed,
+  next blink duration*3 + random 4 s; upper threshold sampled from `upper` map above pupil, filtered (u*3+n)/4,
+  lower = 254 - u) → 5d touch = pain blink.
 
 ## Board facts (measured)
 - ESP32-S3 (QFN56) rev v0.1, 8 MB embedded octal PSRAM, 16 MB Winbond flash (quad), MAC 34:85:18:a9:7a:58.
