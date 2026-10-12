@@ -36,7 +36,7 @@
   internal RAM: 41.2 → 29.4 ms render (lid maps were the big win).
 - **Stage 7 DONE (negative result) — two-core pipeline:** 19.6 → ~20.5 fps only; render and push each ~2× slower together
   → shared MSPI bus (PSRAM + flash + LCD scanout ≈ 90 MB/s) is the limit, not CPU. lesson-07, `stages/07-two-core-pipeline/`.
-  User: leave as is for now. Parked idea: "race the beam" (render into driver fb found by scanning panel struct,
+  Fixed task-watchdog reboot (push task starved IDLE0) with vTaskDelay(1); soak 121 s clean. User: leave as is for now. Parked idea: "race the beam" (render into driver fb found by scanning panel struct,
   start at VSYNC, write back cache per band; ~27 fps, no tearing) — or core 3 / IDF 5 double-buffered panel.
 - **Next (resume here) — ideas, user to pick:** race the beam (see stage 7); eye looks toward / away from the finger; battery + deep sleep with touch wake (read until INT HIGH);
   other eye designs via gen_eye.py; SD / Wi-Fi.

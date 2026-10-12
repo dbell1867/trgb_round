@@ -32,6 +32,26 @@ cache, so the copy never touched PSRAM. Kept anyway (equivalent, simpler).
 
 Decision: keep the pipeline (slightly faster, harmless), stop here for now.
 
+## Bug: reset every ~10 s (task watchdog)
+After the commit the user saw "the animation keeps resetting". Serial without a reset:
+```
+task_wdt: Task watchdog got triggered ... did not reset the watchdog in time:
+task_wdt:  - IDLE0 (CPU 0)
+task_wdt: CPU 0: push
+```
+The task watchdog reboots the chip if core 0's idle task gets no CPU time for 5 s. `pushTask` ran at
+priority 2 (above idle) and, being the bottleneck, *always* found a frame waiting — it never blocked,
+so IDLE0 never ran. **My checks were 14 s long; the first reset came ~18 s after boot** — the same
+trap as lesson 05: testing only in a window where the bug can't appear.
+
+| Fix attempt | Result |
+|---|---|
+| push at idle priority (0) | no resets, but push 48 → 63–68 ms, 15 fps ✗ — each time idle gets its turn it sleeps (`waiti`) until the next 1 ms tick, so push lost ~every other tick |
+| priority 2 + `vTaskDelay(1)` after each push | ✓ ~19.7 fps, **0 watchdog events / 0 reboots over 121 s** |
+
+Rule: a task that may never block must give the idle task time explicitly — and soak-test longer
+than the watchdog timeout (5 s here; minutes is better).
+
 ## The idea for next time: "race the beam"
 The push is a full 0.9 MB PSRAM→PSRAM copy every frame — ~40 % of the bus traffic. Remove it:
 1. **Render straight into the driver's frame buffer.** IDF 4.4 has no getter; find it by scanning the

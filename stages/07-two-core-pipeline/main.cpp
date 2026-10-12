@@ -352,6 +352,11 @@ void pushTask(void *) {
         panel.pushColors(0, 0, W, H, buf);
         uint32_t t2 = micros();
         xQueueSend(freeQ, &buf, portMAX_DELAY);        // hand the buffer back
+        // Push is the bottleneck, so a frame is always waiting and this task never
+        // blocks: IDLE0 starved and the task watchdog rebooted the chip every ~10 s.
+        // Sleep one tick so IDLE0 runs. (Priority 0 instead halved push speed:
+        // idle sleeps until the next tick each time it gets a turn.)
+        vTaskDelay(1);
         pushWaitUs += t1 - t0;
         pushBusyUs += t2 - t1;
         pushCount++;
