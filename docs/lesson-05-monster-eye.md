@@ -111,3 +111,22 @@ misses the cache more. A lead for optimising later.
   instead of a list, so it carries a `count < MAX_KEYS - 1` guard — C arrays don't grow or bounds-check.
 - `int v = a + (b - a) * (int64_t)dt / span;` — the cast to 64-bit avoids overflow, since
   `320 × 10,000,000 µs` doesn't fit in 32 bits (Python ints never overflow).
+
+## Stage 5b2 — less jerky at 16 fps
+Feedback: "the jumps are a bit jerky". Cause: a frame every ~60 ms vs 72–144 ms flicks → 0–1
+in-between frames, so the eye teleports (the original runs at 60+ fps on small screens).
+Changes (motion only — frame rate untouched):
+- **Mostly glances:** 80 % of targets are a hop of ≤ 160 units from the current position, 20 % a
+  look anywhere in the circle.
+- **Duration grows with distance** (real eyes' "main sequence"), stretched for 16 fps:
+  `100 ms + 0.2 ms/unit`, ±15 % → ~110 ms tiny hop … ~400 ms full swing.
+- **Drift while holding:** two slow unrelated sines per axis, ±25 units (≈ 3 screen px).
+- Holds 0.2–3 s (no back-to-back flicks).
+
+| | Predicted | Measured |
+|---|---|---|
+| mean flick | ~140 ms (glance ~125, big ~190) | 139 ms ✓ |
+| glances : big | 80 : 20 | 14 : 3 ✓ |
+
+Verdict by eye: "better now". The real fix is more frames — a two-core render/push pipeline is a
+later stage.

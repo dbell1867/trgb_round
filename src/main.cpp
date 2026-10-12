@@ -1,4 +1,4 @@
-// Stage 5b — monster eye that looks around. Port of the renderer and motion
+// Stage 5b2 — monster eye that looks around (motion tuned for 16 fps). Port of the renderer and motion
 // logic from Adafruit's Uncanny Eyes (MIT license, Phil Burgess / Paint Your
 // Dragon): dragon eye at 240x240, pixel-doubled into a 480x480 PSRAM frame.
 // Random saccades (flick + hold) and a random-walk pupil; no eyelids yet.
@@ -72,22 +72,49 @@ void logf(const char *fmt, ...) {
 
 // ---- Eye motion (saccades) -------------------------------------------------
 // Positions are 0..1023 on each axis (512 = centre), like the original; mapped
-// to a sclera offset 0..SCLERA_SIZE-S when drawing.
+// to a sclera offset 0..SCLERA_SIZE-S when drawing. Tuned for a 16 fps display
+// (stage 5b2): mostly small glances, flick time grows with distance so big
+// looks get more frames, and a slow sub-pixel drift while holding.
 struct Saccade {
+    static constexpr int SMALL_HOP = 160;       // radius of a "glance", 0..1023 units
+    static constexpr int BIG_LOOK_PERCENT = 20; // chance of a look anywhere instead
     bool moving = false;
     int oldX = 512, oldY = 512, newX = 512, newY = 512;
     uint32_t start = 0, duration = 0;           // microseconds
+    uint32_t small = 0, big = 0, flickUsSum = 0;   // stats for the log
 
     // Smooth start and stop: smoothstep 3t^2 - 2t^3, t in 0..1 -> 0..1.
     static float ease(float t) { return t * t * (3 - 2 * t); }
+    static bool inCircle(int x, int y) {
+        int dx = x * 2 - 1023, dy = y * 2 - 1023;
+        return dx * dx + dy * dy <= 1023 * 1023;
+    }
+
+    void pickTarget() {
+        if (random(100) < BIG_LOOK_PERCENT) {   // big look: anywhere in the circle
+            do { newX = random(1024); newY = random(1024); } while (!inCircle(newX, newY));
+            big++;
+        } else {                                 // glance: a short hop from here
+            do {
+                newX = oldX + random(-SMALL_HOP, SMALL_HOP + 1);
+                newY = oldY + random(-SMALL_HOP, SMALL_HOP + 1);
+            } while (newX < 0 || newX > 1023 || newY < 0 || newY > 1023 || !inCircle(newX, newY));
+            small++;
+        }
+        // Real eyes take longer for bigger moves ("main sequence"). Stretched for
+        // 16 fps: ~110 ms for a tiny hop up to ~400 ms across the whole eye.
+        float dist = hypotf(newX - oldX, newY - oldY);           // 0 .. ~1450
+        duration = (100000 + dist * 200) * random(85, 116) / 100;
+        flickUsSum += duration;
+    }
 
     void update(uint32_t now, int &x, int &y) {
         uint32_t dt = now - start;
         if (moving) {
-            if (dt >= duration) {               // arrived: hold for 0-3 s
+            if (dt >= duration) {               // arrived: hold for 0.2-3 s
                 moving = false;
                 oldX = newX; oldY = newY;
-                duration = random(3000000);
+                duration = random(200000, 3000000);
                 start = now;
                 x = oldX; y = oldY;
             } else {                            // in flight: interpolate
@@ -97,17 +124,17 @@ struct Saccade {
             }
         } else {
             x = oldX; y = oldY;
-            if (dt >= duration) {               // hold over: pick a target in the circle
-                int dx, dy;
-                do {
-                    newX = random(1024); newY = random(1024);
-                    dx = newX * 2 - 1023; dy = newY * 2 - 1023;
-                } while (dx * dx + dy * dy > 1023 * 1023);
-                duration = random(72000, 144000);   // ~1/14 .. 1/7 s
+            if (dt >= duration) {               // hold over: start a new flick
+                pickTarget();
                 start = now;
                 moving = true;
             }
         }
+        // Drift: two slow, unrelated sine waves per axis, about +-25 units
+        // (~1.5 rendered px, ~3 screen px), so the eye is never perfectly still.
+        float ts = now / 1e6f;
+        x = constrain(x + (int)(15 * sinf(ts * 1.3f) + 10 * sinf(ts * 0.47f + 1.0f)), 0, 1023);
+        y = constrain(y + (int)(15 * sinf(ts * 1.1f + 2.0f) + 10 * sinf(ts * 0.61f)), 0, 1023);
     }
 };
 
@@ -160,7 +187,7 @@ void setup() {
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0);   // G11 — not enough on core 2.0.17, hence logf()
     delay(1500);
-    Serial.println("\n=== T-RGB stage 5b: monster eye looks around ===");
+    Serial.println("\n=== T-RGB stage 5b2: monster eye, natural motion ===");
     Serial.printf("tables: screen %d, sclera %d, iris %d, iris map %dx%d\n",
                   SCREEN_SIZE, SCLERA_SIZE, IRIS_SIZE, IRIS_MAP_WIDTH, IRIS_MAP_HEIGHT);
 
@@ -200,11 +227,12 @@ void loop() {
     if (millis() - lastReport >= 2000) {
         totalFrames += frames;
         logf("t=%3lus  frames %lu  %.1f fps  render+double %lu us  push %lu us  "
-             "iScale %d  offset %d,%d  saccades %lu\n",
+             "iScale %d  offset %d,%d  glances %lu big %lu  mean flick %lu ms\n",
              millis() / 1000, (unsigned long)totalFrames,
              frames * 1000.0f / (millis() - lastReport),
              (unsigned long)(renderUs / frames), (unsigned long)(pushUs / frames),
-             iScale, sx, sy, (unsigned long)moves);
+             iScale, sx, sy, (unsigned long)saccade.small, (unsigned long)saccade.big,
+             (unsigned long)(moves ? saccade.flickUsSum / moves / 1000 : 0));
         frames = renderUs = pushUs = 0;
         lastReport = millis();
     }
