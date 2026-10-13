@@ -8,7 +8,8 @@
   vendor board JSON in `boards/`), `include/board_pins.h`, `scripts/read_serial.py`.
 - **Stage 1 DONE** (hello serial; lesson-01, snapshot `stages/01-hello-serial/`).
   Factory demo is gone from flash (restore from `backup/`).
-- **`src/main.cpp`:** Stage 8 — stage 7 jack-o'-lantern eye (two-core pipeline, ~20 fps) that glares at the finger while in pain.
+- **`src/main.cpp`:** Stage 9 — jack-o'-lantern eye (two-core pipeline, ~20 fps, glares at the finger) with eight designs:
+  2 s press = next design (behind shut lids), remembered in NVS. Needs `scripts/gen_all_eyes.sh` after cloning.
 - **Stage 2a DONE — first light** (vendor lib + pushColors colour bars; colours + orientation correct;
   GT911 confirmed at 0x5D). lesson-02, snapshot `stages/02a-first-light/`.
 - **Stage 2b DONE — text** (Arduino_GFX canvas in PSRAM → pushColors; strip updates 1.6 ms vs 24 ms full;
@@ -42,8 +43,11 @@
   finger with smooth pursuit (exp filter, TAU 60 ms); `GAZE` +1 glare / -1 look away. User: all four checks pass.
   Found a 2nd HWCDC trap: TX interrupt stalls with bytes queued, `logf()` guard never writes again → serial silent;
   fixed by kicking the transmitter after 1 s of drops (confirmed: kicks 1, free 84).
-- **Next (resume here) — ideas, user to pick:** race the beam (see stage 7); battery + deep sleep with touch wake (read until INT HIGH);
-  other eye designs via gen_eye.py; SD / Wi-Fi.
+- **Stage 9 DONE — eight eye designs** (lesson-09, `stages/09-eye-designs/`, contact sheet `docs/img/eye-designs.png`):
+  gen_eye.py handles round pupils / plain lids / namespaces; EyeDesign table; long press switches; Preferences.
+  Render ~48 ms (+1–3). terminatorEye left out (no lids). User: all cycle and react, reset remembers.
+- **Next (resume here) — ideas, user to pick:** battery + deep sleep with touch wake (read until INT HIGH) — **user is
+  getting a LiPo first**; race the beam (see stage 7); SD / Wi-Fi.
 
 ## Board facts (measured)
 - ESP32-S3 (QFN56) rev v0.1, 8 MB embedded octal PSRAM, 16 MB Winbond flash (quad), MAC 34:85:18:a9:7a:58.

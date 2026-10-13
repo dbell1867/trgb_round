@@ -5,3 +5,6 @@ compile_commands.json
 .cache/
 __pycache__/
 scripts/.venv/
+
+# Generated eye tables (scripts/gen_all_eyes.sh) — ~2 MB of hex each
+include/eyes/

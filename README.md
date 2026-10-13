@@ -38,6 +38,7 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 | 6 | Jack-o'-lantern eye — pumpkin-flesh eyelids, tables in RAM | ✅ done | [lesson 06](docs/lesson-06-pumpkin-lids.md) |
 | 7 | Two-core render/push pipeline — memory bus is the limit (negative result) | ✅ done | [lesson 07](docs/lesson-07-two-cores.md) |
 | 8 | Eye glares at (or away from) the finger — smooth pursuit; USB serial stall fix | ✅ done | [lesson 08](docs/lesson-08-eye-follows-finger.md) |
+| 9 | Eight eye designs — long press to switch, remembered in flash | ✅ done | [lesson 09](docs/lesson-09-eye-designs.md) |
 | … | microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).
@@ -54,6 +55,7 @@ is per-variant and goes through the expander, so the vendor driver is used for b
 Requires [PlatformIO Core](https://platformio.org/install/cli).
 
 ```bash
+scripts/gen_all_eyes.sh      # once after cloning: generate include/eyes/*.h (needs scripts/.venv with Pillow)
 pio run                      # build (first run downloads the toolchain)
 pio run -t upload            # flash over USB-C
 python scripts/read_serial.py /dev/ttyACM0 8      # read serial (resets the board)
@@ -92,6 +94,6 @@ in chunks and falling back to the ROM reader for the blocks that stall.
 
 ## Credits
 
-The monster eye (stage 5) ports the renderer, table format and dragon artwork of
+The monster eye (stage 5) ports the renderer, table format and eye artwork of
 [Adafruit Uncanny Eyes](https://github.com/adafruit/Uncanny_Eyes) by Phil Burgess / Paint Your
 Dragon for Adafruit Industries, MIT license.
