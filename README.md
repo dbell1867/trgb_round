@@ -37,6 +37,7 @@ Board facts were researched from [Xinyuan-LilyGO/T-RGB](https://github.com/Xinyu
 | 5 | Monster eye — Adafruit Uncanny Eyes dragon, touch = pain blink | ✅ done | [lesson 05](docs/lesson-05-monster-eye.md) |
 | 6 | Jack-o'-lantern eye — pumpkin-flesh eyelids, tables in RAM | ✅ done | [lesson 06](docs/lesson-06-pumpkin-lids.md) |
 | 7 | Two-core render/push pipeline — memory bus is the limit (negative result) | ✅ done | [lesson 07](docs/lesson-07-two-cores.md) |
+| 8 | Eye glares at (or away from) the finger — smooth pursuit; USB serial stall fix | ✅ done | [lesson 08](docs/lesson-08-eye-follows-finger.md) |
 | … | microSD, Wi-Fi, battery + deep sleep | ideas | — |
 
 Current position and next steps: [`docs/PLAN.md`](docs/PLAN.md).
